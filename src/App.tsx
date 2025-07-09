@@ -12,6 +12,7 @@ const JUMP_FORCE = 15;
 const OBSTACLE_WIDTH = 50;
 const OBSTACLE_GAP = 200;
 const OBSTACLE_SPEED = 5;
+const HERO_SPEED = 7; // New constant for horizontal movement
 
 interface Obstacle {
   id: number;
@@ -26,12 +27,14 @@ interface Obstacle {
 const App: React.FC = () => {
   /* ---------- React state used only for rendering ---------- */
   const [heroY, setHeroY] = useState(0); // 0 means on the ground, negative means up
+  const [heroX, setHeroX] = useState(50); // New state for heroX
   const [obstacles, setObstacles] = useState<Obstacle[]>([]);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
 
   /* ---------- Refs for mutable game data (not triggering re-render) ---------- */
   const heroYRef = useRef(0);
+  const heroXRef = useRef(50); // New ref for horizontal position
   const heroVelRef = useRef(0);
   const obstaclesRef = useRef<Obstacle[]>([]);
   const gameOverRef = useRef(false);
@@ -41,6 +44,10 @@ const App: React.FC = () => {
     (e: KeyboardEvent) => {
       if (e.code === 'Space' && heroYRef.current === 0 && !gameOverRef.current) {
         heroVelRef.current = -JUMP_FORCE;
+      } else if (e.code === 'ArrowLeft' && !gameOverRef.current) {
+        heroXRef.current = Math.max(0, heroXRef.current - HERO_SPEED * 10); // Move left
+      } else if (e.code === 'ArrowRight' && !gameOverRef.current) {
+        heroXRef.current = Math.min(GAME_WIDTH - HERO_SIZE, heroXRef.current + HERO_SPEED * 10); // Move right
       }
     },
     []
@@ -64,6 +71,9 @@ const App: React.FC = () => {
         heroVelRef.current = 0;
       }
 
+      // Update hero X position based on key presses (if any)
+      // This is handled by handleKeyPress directly, so no need for continuous update here
+
       // Update obstacles
       let newObstacles = obstaclesRef.current
         .map((o) => ({ ...o, left: o.left - OBSTACLE_SPEED }))
@@ -71,7 +81,7 @@ const App: React.FC = () => {
 
       // Collision detection
       for (const o of newObstacles) {
-        const heroLeft = 50;
+        const heroLeft = heroXRef.current; // Use heroXRef for collision
         const heroRight = heroLeft + HERO_SIZE;
         const heroBottom = -heroYRef.current; // heroY is negative when in air
 
@@ -91,7 +101,7 @@ const App: React.FC = () => {
       }
 
       // Score update
-      const passed = newObstacles.find((o) => !o.passed && o.left + OBSTACLE_WIDTH < 50);
+      const passed = newObstacles.find((o) => !o.passed && o.left + OBSTACLE_WIDTH < heroXRef.current); // Adjust score logic
       if (passed) {
         setScore((s) => s + 1);
         newObstacles = newObstacles.map((o) => (o.id === passed.id ? { ...o, passed: true } : o));
@@ -110,6 +120,7 @@ const App: React.FC = () => {
       obstaclesRef.current = newObstacles;
       setObstacles(newObstacles);
       setHeroY(heroYRef.current);
+      setHeroX(heroXRef.current); // Update heroX state for rendering
     }, 1000 / 60);
 
     return () => clearInterval(interval);
@@ -118,11 +129,13 @@ const App: React.FC = () => {
   /* ---------- Restart ---------- */
   const restartGame = () => {
     heroYRef.current = 0;
+    heroXRef.current = 50; // Reset heroX on restart
     heroVelRef.current = 0;
     obstaclesRef.current = [];
     gameOverRef.current = false;
 
     setHeroY(0);
+    setHeroX(50); // Reset heroX state
     setObstacles([]);
     setScore(0);
     setGameOver(false);
@@ -132,7 +145,7 @@ const App: React.FC = () => {
   return (
     <div id="game-board" style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}>
       {/* Hero */}
-      <div id="hero" style={{ transform: `translateY(${heroY}px)` }} />
+      <div id="hero" style={{ transform: `translateY(${heroY}px) translateX(${heroX}px)` }} />
 
       {/* Obstacles */}
       {obstacles.map((o) => (
