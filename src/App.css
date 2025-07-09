@@ -5,6 +5,8 @@
   position: relative;
   overflow: hidden;
   background-color: #87CEEB; /* Sky blue */
+  background-attachment: fixed;
+  animation: none !important;
 }
 
 #hero {
