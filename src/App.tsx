@@ -45,9 +45,9 @@ const App: React.FC = () => {
       if (e.code === 'Space' && heroYRef.current === 0 && !gameOverRef.current) {
         heroVelRef.current = -JUMP_FORCE;
       } else if (e.code === 'ArrowLeft' && !gameOverRef.current) {
-        heroXRef.current = Math.max(0, heroXRef.current - HERO_SPEED * 10); // Move left
+        heroXRef.current = Math.max(0, heroXRef.current - HERO_SPEED); // Move left
       } else if (e.code === 'ArrowRight' && !gameOverRef.current) {
-        heroXRef.current = Math.min(GAME_WIDTH - HERO_SIZE, heroXRef.current + HERO_SPEED * 10); // Move right
+        heroXRef.current = Math.min(GAME_WIDTH - HERO_SIZE, heroXRef.current + HERO_SPEED); // Move right
       }
     },
     []
