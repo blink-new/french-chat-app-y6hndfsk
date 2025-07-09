@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 
+/***********************
+ * CONFIG
+ **********************/
 const HERO_SIZE = 50;
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 500;
@@ -10,118 +13,169 @@ const OBSTACLE_WIDTH = 50;
 const OBSTACLE_GAP = 200;
 const OBSTACLE_SPEED = 5;
 
-const App = () => {
-  const [heroPosition, setHeroPosition] = useState(0);
-  const [heroVelocity, setHeroVelocity] = useState(0);
-  const [obstacles, setObstacles] = useState([]);
-  const [gameOver, setGameOver] = useState(false);
-  const [score, setScore] = useState(0);
+interface Obstacle {
+  id: number;
+  left: number;
+  height: number;
+  passed: boolean;
+}
 
-  const handleKeyPress = useCallback((e) => {
-    if (e.code === 'Space' && heroPosition === 0) {
-      setHeroVelocity(-JUMP_FORCE);
-    }
-  }, [heroPosition]);
+/***********************
+ * COMPONENT
+ **********************/
+const App: React.FC = () => {
+  /* ---------- React state used only for rendering ---------- */
+  const [heroY, setHeroY] = useState(0); // 0 means on the ground, negative means up
+  const [obstacles, setObstacles] = useState<Obstacle[]>([]);
+  const [score, setScore] = useState(0);
+  const [gameOver, setGameOver] = useState(false);
+
+  /* ---------- Refs for mutable game data (not triggering re-render) ---------- */
+  const heroYRef = useRef(0);
+  const heroVelRef = useRef(0);
+  const obstaclesRef = useRef<Obstacle[]>([]);
+  const gameOverRef = useRef(false);
+
+  /* ---------- Jump (space key) ---------- */
+  const handleKeyPress = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.code === 'Space' && heroYRef.current === 0 && !gameOverRef.current) {
+        heroVelRef.current = -JUMP_FORCE;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-    };
+    return () => window.removeEventListener('keydown', handleKeyPress);
   }, [handleKeyPress]);
 
+  /* ---------- Main game loop ---------- */
   useEffect(() => {
-    if (gameOver) return;
+    if (gameOver) return; // stop loop when game over
 
-    const gameLoop = setInterval(() => {
-      // Hero physics
-      const newVelocity = heroVelocity + GRAVITY;
-      const newPosition = heroPosition + newVelocity;
-
-      if (newPosition > 0) {
-        newPosition = 0;
-        newVelocity = 0;
+    const interval = setInterval(() => {
+      // Update hero physics
+      heroVelRef.current += GRAVITY;
+      heroYRef.current += heroVelRef.current;
+      if (heroYRef.current > 0) {
+        heroYRef.current = 0;
+        heroVelRef.current = 0;
       }
 
-      setHeroPosition(newPosition);
-      setHeroVelocity(newVelocity);
-
-      // Obstacle logic
-      const newObstacles = obstacles.map(obstacle => ({
-        ...obstacle,
-        left: obstacle.left - OBSTACLE_SPEED,
-      })).filter(obstacle => obstacle.left > -OBSTACLE_WIDTH);
+      // Update obstacles
+      let newObstacles = obstaclesRef.current
+        .map((o) => ({ ...o, left: o.left - OBSTACLE_SPEED }))
+        .filter((o) => o.left > -OBSTACLE_WIDTH);
 
       // Collision detection
-      for (const obstacle of newObstacles) {
+      for (const o of newObstacles) {
         const heroLeft = 50;
         const heroRight = heroLeft + HERO_SIZE;
-        const heroBottom = GAME_HEIGHT - (GAME_HEIGHT + newPosition);
+        const heroBottom = -heroYRef.current; // heroY is negative when in air
 
-        const obstacleLeft = obstacle.left;
-        const obstacleRight = obstacle.left + OBSTACLE_WIDTH;
-        const obstacleTop = GAME_HEIGHT - obstacle.height;
+        const obstacleLeft = o.left;
+        const obstacleRight = o.left + OBSTACLE_WIDTH;
+        const obstacleTop = GAME_HEIGHT - o.height;
 
-        if (
-          heroRight > obstacleLeft &&
-          heroLeft < obstacleRight &&
-          heroBottom > obstacleTop
-        ) {
+        const horizontalOverlap = heroRight > obstacleLeft && heroLeft < obstacleRight;
+        const verticalOverlap = heroBottom > obstacleTop;
+
+        if (horizontalOverlap && verticalOverlap) {
+          gameOverRef.current = true;
           setGameOver(true);
+          clearInterval(interval);
+          return;
         }
       }
-      
-      // Update score
-      const passedObstacle = obstacles.find(o => o.left + OBSTACLE_WIDTH < 50 && !o.passed);
-      if (passedObstacle) {
-        setScore(s => s + 1);
-        newObstacles = newObstacles.map(o => o.id === passedObstacle.id ? {...o, passed: true} : o);
+
+      // Score update
+      const passed = newObstacles.find((o) => !o.passed && o.left + OBSTACLE_WIDTH < 50);
+      if (passed) {
+        setScore((s) => s + 1);
+        newObstacles = newObstacles.map((o) => (o.id === passed.id ? { ...o, passed: true } : o));
       }
 
-
-      // Add new obstacles
-      if (
+      // Spawn new obstacle if needed
+      const needNew =
         newObstacles.length === 0 ||
-        newObstacles[newObstacles.length - 1].left < GAME_WIDTH - OBSTACLE_GAP
-      ) {
-        const newHeight = Math.floor(Math.random() * (GAME_HEIGHT / 2)) + 50;
-        newObstacles.push({ id: Date.now(), left: GAME_WIDTH, height: newHeight, passed: false });
+        newObstacles[newObstacles.length - 1].left < GAME_WIDTH - OBSTACLE_GAP;
+      if (needNew) {
+        const h = Math.floor(Math.random() * (GAME_HEIGHT / 2)) + 50;
+        newObstacles.push({ id: Date.now(), left: GAME_WIDTH, height: h, passed: false });
       }
 
+      // Commit updates
+      obstaclesRef.current = newObstacles;
       setObstacles(newObstacles);
+      setHeroY(heroYRef.current);
     }, 1000 / 60);
 
-    return () => clearInterval(gameLoop);
-  }, [heroPosition, heroVelocity, obstacles, gameOver]);
+    return () => clearInterval(interval);
+  }, [gameOver]);
 
+  /* ---------- Restart ---------- */
   const restartGame = () => {
-    setHeroPosition(0);
-    setHeroVelocity(0);
+    heroYRef.current = 0;
+    heroVelRef.current = 0;
+    obstaclesRef.current = [];
+    gameOverRef.current = false;
+
+    setHeroY(0);
     setObstacles([]);
-    setGameOver(false);
     setScore(0);
+    setGameOver(false);
   };
 
+  /* ---------- Render ---------- */
   return (
     <div id="game-board" style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}>
-      <div id="hero" style={{ transform: `translateY(${heroPosition}px)` }}></div>
-      {obstacles.map(obstacle => (
+      {/* Hero */}
+      <div id="hero" style={{ transform: `translateY(${heroY}px)` }} />
+
+      {/* Obstacles */}
+      {obstacles.map((o) => (
         <div
-          key={obstacle.id}
+          key={o.id}
           className="obstacle"
-          style={{ left: obstacle.left, height: obstacle.height }}
-        ></div>
+          style={{ left: o.left, height: o.height }}
+        />
       ))}
-      {gameOver && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', color: 'white' }}>
-          <h1>Game Over</h1>
-          <p>Score: {score}</p>
-          <button onClick={restartGame}>Restart</button>
-        </div>
-      )}
-       <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', fontSize: 24 }}>
+
+      {/* Score */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 10,
+          left: 10,
+          color: 'white',
+          fontSize: 24,
+          fontWeight: 600,
+        }}
+      >
         Score: {score}
       </div>
+
+      {/* Game over overlay */}
+      {gameOver && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            textAlign: 'center',
+            color: 'white',
+          }}
+        >
+          <h1 style={{ margin: 0 }}>Game Over</h1>
+          <p>Score: {score}</p>
+          <button onClick={restartGame} style={{ padding: '6px 14px', cursor: 'pointer' }}>
+            Restart
+          </button>
+        </div>
+      )}
     </div>
   );
 };
